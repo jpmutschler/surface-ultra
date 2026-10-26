@@ -1,0 +1,9 @@
+logs/
+drivers/*
+!drivers/README.md
+apps/*
+bench/results/
+config/machine.local.psd1
+*.zip
+*.gguf
+.env

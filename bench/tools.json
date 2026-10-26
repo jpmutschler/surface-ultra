@@ -1,0 +1,30 @@
+[
+  {"type": "function", "function": {
+    "name": "get_link_status",
+    "description": "Read negotiated PCIe link speed, width and LTSSM state for a switch port on an Atlas3/HYDRA card.",
+    "parameters": {"type": "object", "properties": {
+      "port": {"type": "integer", "description": "Switch port number"}}, "required": ["port"]}}},
+  {"type": "function", "function": {
+    "name": "set_port_power",
+    "description": "Enable or disable slot power for a downstream port. WRITE-level action.",
+    "parameters": {"type": "object", "properties": {
+      "port": {"type": "integer"},
+      "enabled": {"type": "boolean"}}, "required": ["port", "enabled"]}}},
+  {"type": "function", "function": {
+    "name": "read_config_space",
+    "description": "Read bytes from a PCIe function's configuration space.",
+    "parameters": {"type": "object", "properties": {
+      "bdf": {"type": "string", "description": "Domain:bus:device.function, e.g. 0000:3b:00.0"},
+      "offset": {"type": "integer", "description": "Byte offset"},
+      "length": {"type": "integer", "description": "Number of bytes"}}, "required": ["bdf", "offset", "length"]}}},
+  {"type": "function", "function": {
+    "name": "nvme_mi_health_poll",
+    "description": "Send an NVMe-MI NVM Subsystem Health Status Poll over MCTP/SMBus to the drive in a JBOF slot.",
+    "parameters": {"type": "object", "properties": {
+      "slot": {"type": "integer"}}, "required": ["slot"]}}},
+  {"type": "function", "function": {
+    "name": "i3c_entdaa",
+    "description": "Run ENTDAA dynamic address assignment on an I3C bus.",
+    "parameters": {"type": "object", "properties": {
+      "bus": {"type": "integer"}}, "required": ["bus"]}}}
+]

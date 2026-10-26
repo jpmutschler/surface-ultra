@@ -1,0 +1,23 @@
+set windows-shell := ["pwsh", "-NoLogo", "-Command"]
+
+# uv venv + npm install (once)
+setup:
+    uv sync
+    cd frontend; npm install
+
+# API with reload on :8000 + Vite dev server on :5173 (proxies /api)
+dev:
+    Start-Process -NoNewWindow uv -ArgumentList 'run','uvicorn','app.server:app','--reload','--port','8000'
+    cd frontend; npm run dev
+
+# build the UI into src/app/static
+build:
+    cd frontend; npm run build
+
+# wheel with the UI inside -> dist/
+wheel: build
+    uv build --wheel
+
+# serve the built UI + API like production
+run: build
+    uv run app

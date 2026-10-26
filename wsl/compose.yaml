@@ -1,0 +1,111 @@
+# WSL2 service stack. Copied to ~/surface-ultra/ by scripts/60-Services.ps1.
+#   docker compose up -d                 # LiteLLM + Qdrant + Open WebUI
+#   docker compose --profile vllm up -d  # + vLLM (NVFP4 parity tests) - stop big native models first
+#   (profile nda: qdrant-nda + litellm-nda - only via tools/NdaSession.ps1, which supplies the keys)
+# Host networking + WSL mirrored mode = everything shares Windows' localhost.
+# Pin image tags in .env once a combination is proven on the real unit.
+
+name: surface-ultra
+
+services:
+  litellm:
+    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:main-stable}
+    network_mode: host
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./litellm.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--host", "127.0.0.1", "--port", "${LITELLM_PORT:-4000}"]
+
+  qdrant:
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+
+  # NDA-session Qdrant for NDA collections. Started by tools/NdaSession.ps1 -Start (API key read from
+  # D:\nda\secrets) and stopped by -Stop, so NDA vectors are only queryable during a research session.
+  qdrant-nda:
+    profiles: ["nda"]
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:latest}
+    restart: "no"
+    ports:
+      - "127.0.0.1:${NDA_QDRANT_PORT:-6335}:6333"
+    environment:
+      QDRANT__SERVICE__API_KEY: "${QDRANT_NDA_KEY:-}"   # always passed by NdaSession.ps1; never start this service by hand
+      QDRANT__TELEMETRY_DISABLED: "true"
+    volumes:
+      - qdrant-nda-data:/qdrant/storage
+
+  # NDA gateway for `ccn` (Claude Code on local models) and the planning pipeline. Same routes as litellm,
+  # but no callbacks (nothing exported to Langfuse) and the Spark's no-content-logging key. Started and
+  # stopped with qdrant-nda by tools/NdaSession.ps1; keys come from D:\nda\secrets, never from .env.
+  litellm-nda:
+    profiles: ["nda"]
+    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:main-stable}
+    network_mode: host
+    restart: "no"
+    environment:
+      LITELLM_MASTER_KEY: "${LITELLM_NDA_KEY:-}"
+      SPARK_NDA_LITELLM_KEY: "${SPARK_NDA_LITELLM_KEY:-unset}"
+      LITELLM_TELEMETRY: "False"
+    volumes:
+      - ./litellm-nda.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--host", "127.0.0.1", "--port", "${NDA_LITELLM_PORT:-4001}"]
+
+  open-webui:
+    image: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:main}
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      PORT: "${OPENWEBUI_PORT:-3000}"          # default 8080 would collide with llama-swap
+      OPENAI_API_BASE_URL: "http://127.0.0.1:${LITELLM_PORT:-4000}/v1"
+      OPENAI_API_KEY: "${LITELLM_MASTER_KEY}"
+      ENABLE_OLLAMA_API: "false"
+      VECTOR_DB: "qdrant"
+      QDRANT_URI: "http://127.0.0.1:6333"
+      WEBUI_AUTH: "true"
+      # no phone-home from the research front end
+      ANONYMIZED_TELEMETRY: "false"
+      SCARF_NO_ANALYTICS: "true"
+      DO_NOT_TRACK: "true"
+      ENABLE_WEB_SEARCH: "false"
+    volumes:
+      - openwebui-data:/app/backend/data
+
+  vllm:
+    profiles: ["vllm"]
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:cu130-nightly}
+    network_mode: host
+    ipc: host
+    gpus: all
+    env_file: .env
+    volumes:
+      - ${HF_CACHE_WSL:-${HOME}/.cache/huggingface}:/root/.cache/huggingface
+    # Laptop-conservative version of the DGX Spark recipe (stevescargall.com, Apr 2026).
+    # gpu-memory-utilization is a fraction of the Windows GPU budget - keep it low; a
+    # NemoClaw report shows vLLM OOM-killing the host on N1X during weight load.
+    command:
+      - "--model=${VLLM_MODEL:-nvidia/Qwen3.6-35B-A3B-NVFP4}"
+      - "--served-model-name=vllm-coder"
+      - "--host=127.0.0.1"
+      - "--port=8000"
+      - "--gpu-memory-utilization=${VLLM_GPU_UTIL:-0.45}"
+      - "--max-model-len=65536"
+      - "--max-num-seqs=8"
+      - "--kv-cache-dtype=fp8_e4m3"
+      - "--enable-prefix-caching"
+      - "--enable-chunked-prefill"
+      - "--reasoning-parser=qwen3"
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser=qwen3_coder"
+
+volumes:
+  qdrant-data:
+  qdrant-nda-data:
+  openwebui-data:
